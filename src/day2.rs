@@ -7,7 +7,7 @@ use anyhow::anyhow;
 use anyhow::Error;
 use anyhow::Result;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
 enum Cube {
     Red(usize),
     Green(usize),
@@ -102,6 +102,31 @@ impl CubeSet {
     fn is_possible(&self, cubes: (Cube, Cube, Cube)) -> bool {
         self.cubes.iter().all(|cube| cube.is_possible(cubes))
     }
+
+    fn set_min(&self) -> (Cube, Cube, Cube) {
+        let red_min = self
+            .cubes
+            .iter()
+            .find(|&&cube| matches!(cube, Cube::Red(_)))
+            .copied()
+            .unwrap_or(Cube::Red(0));
+
+        let green_min = self
+            .cubes
+            .iter()
+            .find(|&&cube| matches!(cube, Cube::Green(_)))
+            .copied()
+            .unwrap_or(Cube::Green(0));
+
+        let blue_min = self
+            .cubes
+            .iter()
+            .find(|&&cube| matches!(cube, Cube::Blue(_)))
+            .copied()
+            .unwrap_or(Cube::Blue(0));
+
+        (red_min, green_min, blue_min)
+    }
 }
 
 impl Game {
@@ -126,6 +151,28 @@ impl Game {
             .iter()
             .all(|cube_set| cube_set.is_possible(cubes))
     }
+
+    fn set_min(&self) -> (Cube, Cube, Cube) {
+        let set_min = self.cube_sets.iter().map(|cube_set| cube_set.set_min());
+
+        let red_min = set_min
+            .clone()
+            .map(|(red, _, _)| red)
+            .max()
+            .unwrap_or(Cube::Red(0));
+        let green_min = set_min
+            .clone()
+            .map(|(_, green, _)| green)
+            .max()
+            .unwrap_or(Cube::Green(0));
+        let blue_min = set_min
+            .clone()
+            .map(|(_, _, blue)| blue)
+            .max()
+            .unwrap_or(Cube::Blue(0));
+
+        (red_min, green_min, blue_min)
+    }
 }
 
 fn part_one(games: &[Game]) -> usize {
@@ -140,11 +187,23 @@ fn part_one(games: &[Game]) -> usize {
         .sum()
 }
 
+fn part_two(games: &[Game]) -> usize {
+    games
+        .iter()
+        .map(Game::set_min)
+        .filter_map(|cubes| match cubes {
+            (Cube::Red(red), Cube::Green(green), Cube::Blue(blue)) => Some(red * green * blue),
+            _ => None,
+        })
+        .sum()
+}
+
 fn main() -> Result<()> {
     let stdin = io::stdin();
     let games = Game::from_stdin(stdin)?;
 
     println!("Part one: {}", part_one(&games));
+    println!("Part two: {}", part_two(&games));
 
     Ok(())
 }
