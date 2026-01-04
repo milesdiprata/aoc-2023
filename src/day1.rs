@@ -105,7 +105,7 @@ fn main() -> Result<()> {
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 54_601);
-    }
+    };
 
     {
         let start = Instant::now();
@@ -114,7 +114,7 @@ fn main() -> Result<()> {
 
         println!("Part 2: {part2} ({elapsed:?})");
         assert_eq!(part2, 54_078);
-    }
+    };
 
     Ok(())
 }
