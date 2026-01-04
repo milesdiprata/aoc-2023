@@ -3,10 +3,12 @@ name = "aoc-2023"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-anyhow = "1.0.76"
+anyhow = "1.0.100"
+
+[profile.release]
+opt-level = 3
+lto = true
 
 [[bin]]
 name = "day1"
@@ -15,3 +17,7 @@ path = "src/day1.rs"
 [[bin]]
 name = "day2"
 path = "src/day2.rs"
+
+[[bin]]
+name = "day3"
+path = "src/day3.rs"
