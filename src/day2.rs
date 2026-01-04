@@ -99,6 +99,22 @@ impl Game {
 
         true
     }
+
+    fn min_cubes(&self) -> (u32, u32, u32) {
+        let (mut min_red, mut min_green, mut min_blue) = (0, 0, 0);
+
+        for set in &self.sets {
+            for &(count, color) in set {
+                match color {
+                    Color::Red => min_red = min_red.max(count),
+                    Color::Green => min_green = min_green.max(count),
+                    Color::Blue => min_blue = min_blue.max(count),
+                }
+            }
+        }
+
+        (min_red, min_green, min_blue)
+    }
 }
 
 fn part1(games: &[Game]) -> u32 {
@@ -106,6 +122,14 @@ fn part1(games: &[Game]) -> u32 {
         .iter()
         .filter(|&game| game.is_possible())
         .map(|game| game.id)
+        .sum()
+}
+
+fn part2(games: &[Game]) -> u32 {
+    games
+        .iter()
+        .map(Game::min_cubes)
+        .map(|(red, green, blue)| red * green * blue)
         .sum()
 }
 
@@ -122,6 +146,15 @@ fn main() -> Result<()> {
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 2_449);
+    };
+
+    {
+        let start = Instant::now();
+        let part2 = self::part2(&games);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 63_981);
     };
 
     Ok(())
