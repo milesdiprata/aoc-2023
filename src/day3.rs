@@ -181,10 +181,44 @@ impl Schematic {
 
         nos
     }
+
+    fn gear_ratios(&self) -> Vec<u32> {
+        let mut ratios = Vec::new();
+        let mut visited = HashSet::new();
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let pos = Pos { x, y };
+                let mut nos = Vec::with_capacity(3);
+
+                if self.get(pos).is_some_and(|symbol| symbol == '*') {
+                    for neighbor in self.neighbors(pos) {
+                        if nos.len() >= 2 {
+                            break;
+                        }
+
+                        if !visited.contains(&neighbor) {
+                            nos.push(self.parse_no(neighbor, &mut visited));
+                        }
+                    }
+
+                    if nos.len() == 2 {
+                        ratios.push(nos.into_iter().product());
+                    }
+                }
+            }
+        }
+
+        ratios
+    }
 }
 
 fn part1(schematic: &Schematic) -> u32 {
     schematic.part_nos().into_iter().sum()
+}
+
+fn part2(schematic: &Schematic) -> u32 {
+    schematic.gear_ratios().into_iter().sum()
 }
 
 fn main() -> Result<()> {
@@ -197,6 +231,15 @@ fn main() -> Result<()> {
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 551_094);
+    };
+
+    {
+        let start = Instant::now();
+        let part2 = self::part2(&schematic);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 80_179_647);
     };
 
     Ok(())
