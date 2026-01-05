@@ -9,7 +9,7 @@ use anyhow::Result;
 
 #[derive(Debug)]
 struct Card {
-    _id: u32,
+    _id: usize,
     winning: Vec<u32>,
     mine: HashSet<u32>,
 }
@@ -70,10 +70,29 @@ impl Card {
 
         points
     }
+
+    fn wins(&self) -> usize {
+        self.winning
+            .iter()
+            .filter(|&win| self.mine.contains(win))
+            .count()
+    }
 }
 
 fn part1(cards: &[Card]) -> u32 {
     cards.iter().map(Card::points).sum()
+}
+
+fn part2(cards: &[Card]) -> usize {
+    let mut counts = vec![1_usize; cards.len()];
+
+    for i in 0..counts.len() {
+        for j in i + 1..=i + cards[i].wins() {
+            counts[j] += counts[i];
+        }
+    }
+
+    counts.into_iter().sum()
 }
 
 fn main() -> Result<()> {
@@ -89,6 +108,15 @@ fn main() -> Result<()> {
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 25_183);
+    };
+
+    {
+        let start = Instant::now();
+        let part2 = self::part2(&cards);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 5_667_240);
     };
 
     Ok(())
