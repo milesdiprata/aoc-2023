@@ -55,6 +55,25 @@ impl Race {
             .filter(|&speed| self.is_record_breaking(speed))
             .count()
     }
+
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    fn num_record_breaking_fast(&self) -> usize {
+        let time = self.time as f64;
+        let dist = self.dist as f64;
+
+        // -s^2 + t*s - d > 0
+        // => s^2 - t*s + d < 0
+        // => s = (t +/- sqrt(t^2 - 4*d) / 2
+        let discriminant = time.mul_add(time, -(4.0 * dist)).sqrt();
+        let low = f64::midpoint(time, -discriminant);
+        let high = f64::midpoint(time, discriminant);
+
+        (high - low).round() as usize
+    }
 }
 
 fn part1(races: &[Race]) -> usize {
@@ -62,7 +81,7 @@ fn part1(races: &[Race]) -> usize {
 }
 
 fn part2(race: &Race) -> usize {
-    race.num_record_breaking()
+    race.num_record_breaking_fast()
 }
 
 fn main() -> Result<()> {
