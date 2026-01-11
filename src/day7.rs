@@ -11,6 +11,7 @@ use anyhow::Result;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Card {
+    Joker,
     Two,
     Three,
     Four,
@@ -37,7 +38,7 @@ enum HandType {
     FiveOfAKind,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Hand {
     cards: [Card; 5],
     bid: u32,
@@ -63,34 +64,6 @@ impl TryFrom<char> for Card {
             'K' => Ok(Self::King),
             'A' => Ok(Self::Ace),
             _ => bail!("invalid card '{card}'"),
-        }
-    }
-}
-
-impl From<[Card; 5]> for HandType {
-    fn from(cards: [Card; 5]) -> Self {
-        let mut counts = HashMap::<Card, u8>::with_capacity(5);
-        for card in cards {
-            *counts.entry(card).or_default() += 1;
-        }
-
-        let three_of_a_kind = counts.values().any(|&count| count == 3);
-        let pair = counts.values().any(|&count| count == 2);
-
-        if counts.values().any(|&count| count == 5) {
-            Self::FiveOfAKind
-        } else if counts.values().any(|&count| count == 4) {
-            Self::FourOfAKind
-        } else if three_of_a_kind && pair {
-            Self::FullHouse
-        } else if three_of_a_kind {
-            Self::ThreeOfAKind
-        } else if counts.values().filter(|&&count| count == 2).count() == 2 {
-            Self::TwoPair
-        } else if pair {
-            Self::OnePair
-        } else {
-            Self::HighCard
         }
     }
 }
@@ -141,17 +114,87 @@ impl Ord for Hand {
     }
 }
 
+impl Card {
+    const fn to_joker(self) -> Self {
+        match self {
+            Self::Jack => Self::Joker,
+            other => other,
+        }
+    }
+}
+
+impl HandType {
+    fn from_cards(cards: [Card; 5]) -> Self {
+        let mut counts = HashMap::<Card, u8>::with_capacity(5);
+        for card in cards {
+            *counts.entry(card).or_default() += 1;
+        }
+
+        let five_of_a_kind = counts.values().any(|&count| count == 5);
+        let four_of_a_kind = counts.values().any(|&count| count == 4);
+        let three_of_a_kind = counts.values().any(|&count| count == 3);
+        let two_pair = counts.values().filter(|&&count| count == 2).count() == 2;
+        let pair = counts.values().any(|&count| count == 2);
+
+        if five_of_a_kind {
+            Self::FiveOfAKind
+        } else if four_of_a_kind {
+            Self::FourOfAKind
+        } else if three_of_a_kind && pair {
+            Self::FullHouse
+        } else if three_of_a_kind {
+            Self::ThreeOfAKind
+        } else if two_pair {
+            Self::TwoPair
+        } else if pair {
+            Self::OnePair
+        } else {
+            Self::HighCard
+        }
+    }
+
+    fn from_cards_with_jokers(cards: [Card; 5]) -> Self {
+        let mut counts = HashMap::<Card, u8>::with_capacity(5);
+        for card in cards {
+            *counts.entry(card).or_default() += 1;
+        }
+
+        let jokers = counts.remove(&Card::Joker).unwrap_or_default();
+        let max = counts.values().copied().max().unwrap_or_default();
+        let best = jokers + max;
+
+        let two_distinct_cards = counts.len() == 2;
+        let two_pair = counts.values().filter(|&&count| count == 2).count() == 2;
+
+        match best {
+            5 => Self::FiveOfAKind,
+            4 => Self::FourOfAKind,
+            3 if two_distinct_cards => Self::FullHouse,
+            3 => Self::ThreeOfAKind,
+            2 if two_pair => Self::TwoPair,
+            2 => Self::OnePair,
+            _ => Self::HighCard,
+        }
+    }
+}
+
 impl Hand {
     fn new(cards: [Card; 5], bid: u32) -> Self {
         Self {
             cards,
             bid,
-            ty: HandType::from(cards),
+            ty: HandType::from_cards(cards),
         }
+    }
+
+    fn with_jokers(mut self) -> Self {
+        self.cards = self.cards.map(Card::to_joker);
+        self.ty = HandType::from_cards_with_jokers(self.cards);
+        self
     }
 }
 
-fn part1(hands: &mut [Hand]) -> usize {
+fn solve(hands: &mut [Hand]) -> usize {
     hands.sort_unstable();
 
     hands
@@ -163,18 +206,29 @@ fn part1(hands: &mut [Hand]) -> usize {
 }
 
 fn main() -> Result<()> {
-    let mut hands = fs::read_to_string("in/day7.txt")?
+    let hands = fs::read_to_string("in/day7.txt")?
         .lines()
         .map(Hand::from_str)
         .collect::<Result<Vec<_>>>()?;
 
     {
+        let mut hands = hands.clone();
         let start = Instant::now();
-        let part1 = self::part1(&mut hands);
+        let part1 = self::solve(&mut hands);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 246_424_613);
+    };
+
+    {
+        let mut hands = hands.into_iter().map(Hand::with_jokers).collect::<Vec<_>>();
+        let start = Instant::now();
+        let part2 = self::solve(&mut hands);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 248_256_639);
     };
 
     Ok(())
