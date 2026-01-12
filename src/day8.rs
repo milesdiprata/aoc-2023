@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs;
 use std::str::FromStr;
 use std::time::Instant;
@@ -20,6 +21,8 @@ struct Map {
     network: Vec<(usize, usize)>,
     start: usize,
     end: usize,
+    start2: Vec<usize>,
+    end2: HashSet<usize>,
 }
 
 impl TryFrom<char> for Instruction {
@@ -75,29 +78,78 @@ impl FromStr for Map {
             network,
             start: node_idxs["AAA"],
             end: node_idxs["ZZZ"],
+            start2: node_idxs
+                .iter()
+                .filter_map(|(&name, &idx)| name.ends_with('A').then_some(idx))
+                .collect(),
+            end2: node_idxs
+                .iter()
+                .filter_map(|(&name, &idx)| name.ends_with('Z').then_some(idx))
+                .collect(),
         })
     }
 }
 
-fn part1(map: &Map) -> usize {
-    let mut count = 0;
+impl Map {
+    fn steps_to_end(&self) -> usize {
+        let mut count = 0;
+        let mut node = self.start;
+        let mut instruction = 0;
 
-    let mut idx_network = map.start;
-    let mut idx_instruction = 0;
+        while node != self.end {
+            node = match self.instructions[instruction] {
+                Instruction::Left => self.network[node].0,
+                Instruction::Right => self.network[node].1,
+            };
 
-    while idx_network != map.end {
-        count += 1;
+            count += 1;
+            instruction += 1;
+            instruction %= self.instructions.len();
+        }
 
-        idx_network = match map.instructions[idx_instruction] {
-            Instruction::Left => map.network[idx_network].0,
-            Instruction::Right => map.network[idx_network].1,
-        };
-
-        idx_instruction += 1;
-        idx_instruction %= map.instructions.len();
+        count
     }
 
-    count
+    fn steps_to_end2(&self, mut node: usize) -> usize {
+        let mut count = 0;
+        let mut instruction = 0;
+
+        while !self.end2.contains(&node) {
+            node = match self.instructions[instruction] {
+                Instruction::Left => self.network[node].0,
+                Instruction::Right => self.network[node].1,
+            };
+
+            count += 1;
+            instruction += 1;
+            instruction %= self.instructions.len();
+        }
+
+        count
+    }
+}
+
+fn part1(map: &Map) -> usize {
+    map.steps_to_end()
+}
+
+fn part2(map: &Map) -> usize {
+    fn gcd(a: usize, b: usize) -> usize {
+        if b == 0 {
+            a
+        } else {
+            gcd(b, a % b)
+        }
+    }
+
+    fn lcm(a: usize, b: usize) -> usize {
+        (a / gcd(a, b)) * b
+    }
+
+    map.start2
+        .iter()
+        .map(|&start| map.steps_to_end2(start))
+        .fold(1, lcm)
 }
 
 fn main() -> Result<()> {
@@ -110,6 +162,15 @@ fn main() -> Result<()> {
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 11_911);
+    };
+
+    {
+        let start = Instant::now();
+        let part2 = self::part2(&map);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 10_151_663_816_849);
     };
 
     Ok(())
