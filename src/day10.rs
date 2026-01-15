@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-use std::collections::VecDeque;
 use std::fmt::Write;
 use std::fs;
 use std::str::FromStr;
@@ -77,7 +75,7 @@ impl std::fmt::Display for Grid {
             }
 
             for x in 0..self.width {
-                let tile = self.get(Pos { x, y }).unwrap();
+                let tile = self.get(Pos { x, y }).ok_or(std::fmt::Error)?;
                 f.write_fmt(format_args!("{tile}"))?;
             }
         }
@@ -181,44 +179,117 @@ impl Grid {
         self.tiles.get((self.width * pos.y) + pos.x).copied()
     }
 
-    fn neighbors(&self, pos: Pos) -> impl Iterator<Item = Pos> + '_ {
-        self.get(pos)
-            .map(|tile| tile.dirs(pos))
-            .unwrap_or_default()
+    fn start_tile(&self) -> Tile {
+        let up = self
+            .start
+            .up()
+            .and_then(|up| self.get(up))
+            .is_some_and(|up| {
+                matches!(
+                    up,
+                    Tile::VerticalPipe | Tile::DownRightPipe | Tile::DownLeftPipe
+                )
+            });
+        let right = self
+            .start
+            .right()
+            .and_then(|right| self.get(right))
+            .is_some_and(|right| {
+                matches!(
+                    right,
+                    Tile::HorizontalPipe | Tile::UpLeftPipe | Tile::DownLeftPipe
+                )
+            });
+        let down: bool = self
+            .start
+            .down()
+            .and_then(|down| self.get(down))
+            .is_some_and(|down| {
+                matches!(
+                    down,
+                    Tile::VerticalPipe | Tile::UpRightPipe | Tile::UpLeftPipe
+                )
+            });
+        let left = self
+            .start
+            .left()
+            .and_then(|left| self.get(left))
+            .is_some_and(|left| {
+                matches!(
+                    left,
+                    Tile::HorizontalPipe | Tile::UpRightPipe | Tile::DownRightPipe
+                )
+            });
+
+        match (up, right, down, left) {
+            (true, false, true, false) => Tile::VerticalPipe,
+            (false, true, false, true) => Tile::HorizontalPipe,
+            (true, true, false, false) => Tile::UpRightPipe,
+            (true, false, false, true) => Tile::UpLeftPipe,
+            (false, false, true, true) => Tile::DownLeftPipe,
+            (false, true, true, false) => Tile::DownRightPipe,
+            _ => unreachable!("start tile is not part of a loop"),
+        }
+    }
+
+    fn trace_loop(&self) -> Vec<Pos> {
+        let mut path = vec![self.start];
+        let mut prev = self.start;
+
+        let mut curr = self
+            .start_tile()
+            .dirs(self.start)
             .into_iter()
             .flatten()
-            .filter(move |&next| {
-                self.get(next).is_some_and(|tile| {
-                    tile.is_pipe() && tile.dirs(next).into_iter().flatten().any(|p| p == pos)
-                })
-            })
-    }
+            .find(|&next| self.get(next).is_some_and(Tile::is_pipe))
+            .unwrap_or_else(|| unreachable!("start tile does not have a valid neighbor"));
 
-    fn find_furthest(&self) -> usize {
-        let mut frontier = VecDeque::from([self.start]);
-        let mut visited = HashSet::from([self.start]);
-        let mut steps = 0;
+        while curr != self.start {
+            path.push(curr);
 
-        while !frontier.is_empty() {
-            let mut inserted = false;
+            let next = self
+                .get(curr)
+                .unwrap_or_else(|| unreachable!("tile in loop is not in the grid"))
+                .dirs(curr)
+                .into_iter()
+                .flatten()
+                .find(|&next| next != prev && self.get(next).is_some_and(Tile::is_pipe))
+                .unwrap_or(self.start);
 
-            for _ in 0..frontier.len() {
-                let pos = frontier.pop_front().unwrap();
-                for next in self.neighbors(pos) {
-                    if visited.insert(next) {
-                        frontier.push_back(next);
-                        inserted = true;
-                    }
-                }
-            }
-
-            if inserted {
-                steps += 1;
-            }
+            prev = curr;
+            curr = next;
         }
 
-        steps
+        path
     }
+}
+
+fn part1(grid: &Grid) -> usize {
+    grid.trace_loop().len() / 2
+}
+
+fn part2(grid: &Grid) -> usize {
+    // Shoelace + Pick's
+    fn count_interior(path: &[Pos]) -> usize {
+        let n = path.len();
+
+        // Shoelace formula
+        let mut area = 0;
+        for i in 0..n {
+            let curr = path[i];
+            let next = path[(i + 1) % n];
+            area += (curr.x.cast_signed()) * (next.y.cast_signed());
+            area -= (next.x.cast_signed()) * (curr.y.cast_signed());
+        }
+
+        let area = area.abs() / 2;
+
+        // Pick's theorem: A = i + b/2 - 1  =>  i = A - b/2 + 1
+        let boundary = n.cast_signed();
+        (area - boundary / 2 + 1).cast_unsigned()
+    }
+
+    count_interior(&grid.trace_loop())
 }
 
 fn main() -> Result<()> {
@@ -226,11 +297,20 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part1 = grid.find_furthest();
+        let part1 = self::part1(&grid);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 6_860);
+    };
+
+    {
+        let start = Instant::now();
+        let part2 = self::part2(&grid);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 343);
     };
 
     Ok(())
