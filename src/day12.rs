@@ -46,7 +46,7 @@ impl FromStr for Record {
             .chars()
             .map(Condition::try_from)
             .collect::<Result<_>>()?;
-        let lens_damaged = parts
+        let damaged_groups = parts
             .next()
             .ok_or_else(|| anyhow!("missing damaged spring lengths"))?
             .split(',')
@@ -55,7 +55,7 @@ impl FromStr for Record {
 
         Ok(Self {
             conditions,
-            damaged_groups: lens_damaged,
+            damaged_groups,
         })
     }
 }
@@ -70,7 +70,6 @@ impl Record {
             .cycle()
             .take((self.conditions.len() * factor) + factor - 1)
             .collect();
-
         let damaged_groups = self
             .damaged_groups
             .iter()
