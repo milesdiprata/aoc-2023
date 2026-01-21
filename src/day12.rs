@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::str::FromStr;
 use std::time::Instant;
@@ -60,20 +61,54 @@ impl FromStr for Record {
 }
 
 impl Record {
-    fn arrangements(&self) -> usize {
-        self.backtrack(0, 0, 0)
+    fn unfold(&self, factor: usize) -> Self {
+        let conditions = self
+            .conditions
+            .iter()
+            .copied()
+            .chain([Condition::Unknown])
+            .cycle()
+            .take((self.conditions.len() * factor) + factor - 1)
+            .collect();
+
+        let damaged_groups = self
+            .damaged_groups
+            .iter()
+            .copied()
+            .cycle()
+            .take(self.damaged_groups.len() * factor)
+            .collect();
+
+        Self {
+            conditions,
+            damaged_groups,
+        }
     }
 
-    fn backtrack(&self, idx: usize, group: usize, run: usize) -> usize {
-        if idx == self.conditions.len() {
-            return usize::from(self.is_complete(group, run));
+    fn arrangements(&self) -> usize {
+        let mut memo = HashMap::new();
+        self.backtrack(&mut memo, 0, 0, 0)
+    }
+
+    fn backtrack(
+        &self,
+        memo: &mut HashMap<(usize, usize, usize), usize>,
+        idx: usize,
+        group: usize,
+        run: usize,
+    ) -> usize {
+        if let Some(&cached) = memo.get(&(idx, group, run)) {
+            return cached;
         }
 
-        let mut count = 0;
+        let count = if idx == self.conditions.len() {
+            usize::from(self.is_complete(group, run))
+        } else {
+            self.try_place_operational(memo, idx, group, run)
+                + self.try_place_damaged(memo, idx, group, run)
+        };
 
-        count += self.try_place_operational(idx, group, run);
-        count += self.try_place_damaged(idx, group, run);
-
+        memo.insert((idx, group, run), count);
         count
     }
 
@@ -84,16 +119,22 @@ impl Record {
             || (group == self.damaged_groups.len() - 1 && run == self.damaged_groups[group])
     }
 
-    fn try_place_operational(&self, idx: usize, group: usize, run: usize) -> usize {
+    fn try_place_operational(
+        &self,
+        memo: &mut HashMap<(usize, usize, usize), usize>,
+        idx: usize,
+        group: usize,
+        run: usize,
+    ) -> usize {
         if self.conditions[idx] == Condition::Operational
             || self.conditions[idx] == Condition::Unknown
         {
             if run == 0 {
                 // Not in a run
-                self.backtrack(idx + 1, group, 0)
+                self.backtrack(memo, idx + 1, group, 0)
             } else if group < self.damaged_groups.len() && run == self.damaged_groups[group] {
                 // Current run is done
-                self.backtrack(idx + 1, group + 1, 0)
+                self.backtrack(memo, idx + 1, group + 1, 0)
             } else {
                 // Mid-group and still need more damaged; prune
                 0
@@ -104,11 +145,17 @@ impl Record {
         }
     }
 
-    fn try_place_damaged(&self, idx: usize, group: usize, run: usize) -> usize {
+    fn try_place_damaged(
+        &self,
+        memo: &mut HashMap<(usize, usize, usize), usize>,
+        idx: usize,
+        group: usize,
+        run: usize,
+    ) -> usize {
         if self.conditions[idx] == Condition::Damaged || self.conditions[idx] == Condition::Unknown
         {
             if group < self.damaged_groups.len() && run < self.damaged_groups[group] {
-                self.backtrack(idx + 1, group, run + 1)
+                self.backtrack(memo, idx + 1, group, run + 1)
             } else {
                 // No more damaged groups remain, or already have enough damaged; prune
                 0
@@ -124,6 +171,13 @@ fn part1(records: &[Record]) -> usize {
     records.iter().map(Record::arrangements).sum()
 }
 
+fn part2(records: &[Record]) -> usize {
+    records
+        .iter()
+        .map(|record| record.unfold(5).arrangements())
+        .sum()
+}
+
 fn main() -> Result<()> {
     let records = fs::read_to_string("in/day12.txt")?
         .lines()
@@ -137,6 +191,15 @@ fn main() -> Result<()> {
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 7_047);
+    };
+
+    {
+        let start = Instant::now();
+        let part2 = self::part2(&records);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 17_391_848_518_844);
     };
 
     Ok(())
