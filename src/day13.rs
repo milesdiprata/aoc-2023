@@ -88,40 +88,54 @@ impl Pattern {
         self.grid.get((y * self.width) + x).copied()
     }
 
-    fn is_reflection_vertical(&self, x: usize) -> bool {
+    fn count_mismatches_vertical(&self, x: usize) -> usize {
         (0..=x)
             .rev()
             .zip(x + 1..self.width)
-            .all(|(left, right)| (0..self.height).all(|y| self.get(left, y) == self.get(right, y)))
+            .map(|(left, right)| {
+                (0..self.height)
+                    .filter(|&y| self.get(left, y) != self.get(right, y))
+                    .count()
+            })
+            .sum()
     }
 
-    fn is_reflection_horizontal(&self, y: usize) -> bool {
+    fn count_mismatches_horizontal(&self, y: usize) -> usize {
         (0..=y)
             .rev()
             .zip(y + 1..self.height)
-            .all(|(up, down)| (0..self.width).all(|x| self.get(x, up) == self.get(x, down)))
+            .map(|(up, down)| {
+                (0..self.width)
+                    .filter(|&x| self.get(x, up) != self.get(x, down))
+                    .count()
+            })
+            .sum()
     }
 
-    fn find_reflection_vertical(&self) -> Option<usize> {
+    fn find_reflection_vertical(&self, mismatches: usize) -> Option<usize> {
         (0..self.width - 1)
-            .find(|&x| self.is_reflection_vertical(x))
+            .find(|&x| self.count_mismatches_vertical(x) == mismatches)
             .map(|x| x + 1)
     }
 
-    fn find_reflection_horizontal(&self) -> Option<usize> {
+    fn find_reflection_horizontal(&self, mismatches: usize) -> Option<usize> {
         (0..self.height - 1)
-            .find(|&y| self.is_reflection_horizontal(y))
+            .find(|&y| self.count_mismatches_horizontal(y) == mismatches)
             .map(|y| y + 1)
     }
 }
 
-fn part1(patterns: &[Pattern]) -> Result<usize> {
+fn solve(patterns: &[Pattern], mismatches: usize) -> Result<usize> {
     let mut sum = 0;
 
     for (i, pattern) in patterns.iter().enumerate() {
         sum += pattern
-            .find_reflection_vertical()
-            .or_else(|| pattern.find_reflection_horizontal().map(|y| 100 * y))
+            .find_reflection_vertical(mismatches)
+            .or_else(|| {
+                pattern
+                    .find_reflection_horizontal(mismatches)
+                    .map(|y| 100 * y)
+            })
             .ok_or_else(|| anyhow!("no reflection found in pattern {i}"))?;
     }
 
@@ -136,11 +150,20 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part1 = self::part1(&patterns)?;
+        let part1 = self::solve(&patterns, 0)?;
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 35_691);
+    };
+
+    {
+        let start = Instant::now();
+        let part2 = self::solve(&patterns, 1)?;
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 39_037);
     };
 
     Ok(())
