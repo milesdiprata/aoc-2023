@@ -115,7 +115,12 @@ impl Map {
         }
     }
 
-    fn next<'a>(&'a self, state: &'a State) -> impl Iterator<Item = State> + 'a {
+    fn next<'a>(
+        &'a self,
+        state: &'a State,
+        steps_min: u8,
+        steps_max: u8,
+    ) -> impl Iterator<Item = State> + 'a {
         const DIRS: [Dir; 4] = [Dir::Up, Dir::Right, Dir::Down, Dir::Left];
 
         DIRS.into_iter().filter_map(move |dir| {
@@ -124,7 +129,12 @@ impl Map {
             }
 
             let steps = if dir == state.dir { state.steps + 1 } else { 1 };
-            if steps > 3 {
+
+            if steps > steps_max {
+                return None;
+            }
+
+            if dir != state.dir && state.steps > 0 && state.steps < steps_min {
                 return None;
             }
 
@@ -141,7 +151,7 @@ impl Map {
         })
     }
 
-    fn min_heat_loss(&self) -> Option<u32> {
+    fn min_heat_loss(&self, steps_min: u8, steps_max: u8) -> Option<u32> {
         let start = Pos { x: 0, y: 0 };
         let goal = Pos {
             x: self.width - 1,
@@ -169,7 +179,7 @@ impl Map {
         )));
 
         while let Some(Reverse((cost, state))) = heap.pop() {
-            if state.pos == goal {
+            if state.pos == goal && state.steps >= steps_min {
                 return Some(cost);
             }
 
@@ -177,7 +187,7 @@ impl Map {
                 continue;
             }
 
-            for state in self.next(&state) {
+            for state in self.next(&state, steps_min, steps_max) {
                 let cost = cost + u32::from(self.get(state.pos)?);
                 heap.push(Reverse((cost, state)));
             }
@@ -192,11 +202,20 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part1 = map.min_heat_loss().unwrap_or_default();
+        let part1 = map.min_heat_loss(1, 3).unwrap_or_default();
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 959);
+    };
+
+    {
+        let start = Instant::now();
+        let part2 = map.min_heat_loss(4, 10).unwrap_or_default();
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 1_135);
     };
 
     Ok(())
