@@ -193,29 +193,46 @@ impl Contraption {
         .flatten()
         .filter(|&(pos, _)| pos.x < self.width && pos.y < self.height)
     }
+
+    fn count_energized(&self, pos: Pos, dir: Dir) -> usize {
+        let mut frontier = Vec::from([(pos, dir)]);
+        let mut visited = HashSet::new();
+
+        while let Some((pos, dir)) = frontier.pop() {
+            if !visited.insert((pos, dir)) {
+                continue;
+            }
+
+            for (pos, dir) in self.next(pos, dir) {
+                frontier.push((pos, dir));
+            }
+        }
+
+        visited
+            .into_iter()
+            .map(|(pos, _)| pos)
+            .collect::<HashSet<_>>()
+            .len()
+    }
 }
 
 fn part1(contraption: &Contraption) -> usize {
     const START: Pos = Pos { x: 0, y: 0 };
+    contraption.count_energized(START, Dir::Right)
+}
 
-    let mut frontier = Vec::from([(START, Dir::Right)]);
-    let mut visited = HashSet::new();
+fn part2(contraption: &Contraption) -> usize {
+    let width = contraption.width;
+    let height = contraption.height;
 
-    while let Some((pos, dir)) = frontier.pop() {
-        if !visited.insert((pos, dir)) {
-            continue;
-        }
-
-        for (pos_next, dir_next) in contraption.next(pos, dir) {
-            frontier.push((pos_next, dir_next));
-        }
-    }
-
-    visited
-        .into_iter()
-        .map(|(pos, _)| pos)
-        .collect::<HashSet<_>>()
-        .len()
+    (0..width)
+        .map(|x| (Pos { x, y: 0 }, Dir::Down))
+        .chain((0..width).map(|x| (Pos { x, y: height - 1 }, Dir::Up)))
+        .chain((0..height).map(|y| (Pos { x: 0, y }, Dir::Right)))
+        .chain((0..height).map(|y| (Pos { x: width - 1, y }, Dir::Left)))
+        .map(|(pos, dir)| contraption.count_energized(pos, dir))
+        .max()
+        .unwrap_or_default()
 }
 
 fn main() -> Result<()> {
@@ -228,6 +245,15 @@ fn main() -> Result<()> {
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 7_067);
+    };
+
+    {
+        let start = Instant::now();
+        let part2 = self::part2(&contraption);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 7_324);
     };
 
     Ok(())
