@@ -28,10 +28,10 @@ enum Rule {
         category: Category,
         cmp: Comparison,
         val: u32,
-        workflow: String,
+        target: String,
     },
     Else {
-        workflow: String,
+        target: String,
     },
 }
 
@@ -44,6 +44,11 @@ struct Workflow {
 #[derive(Debug)]
 struct Part {
     ratings: [u32; 4],
+}
+
+#[derive(Clone, Debug)]
+struct PartRange {
+    ranges: [(u32, u32); 4],
 }
 
 impl TryFrom<char> for Category {
@@ -78,7 +83,7 @@ impl FromStr for Rule {
     fn from_str(rule: &str) -> Result<Self> {
         if rule.chars().all(char::is_alphabetic) {
             Ok(Self::Else {
-                workflow: rule.to_string(),
+                target: rule.to_string(),
             })
         } else {
             let mut rule = rule.split(':');
@@ -110,7 +115,7 @@ impl FromStr for Rule {
                 category,
                 cmp,
                 val,
-                workflow,
+                target: workflow,
             })
         }
     }
@@ -193,20 +198,79 @@ impl Category {
 }
 
 impl Rule {
+    const fn target(&self) -> &str {
+        match self {
+            Self::If {
+                target: workflow, ..
+            }
+            | Self::Else { target: workflow } => workflow.as_str(),
+        }
+    }
+
     fn evaluate(&self, part: &Part) -> Option<&str> {
         match self {
             Self::If {
                 category,
                 cmp,
                 val,
-                workflow,
+                target: workflow,
             } => match cmp {
                 Comparison::Less => part.ratings[category.idx()] < *val,
                 Comparison::Greater => part.ratings[category.idx()] > *val,
             }
             .then_some(workflow.as_str()),
-            Self::Else { workflow } => Some(workflow.as_str()),
+            Self::Else { target: workflow } => Some(workflow.as_str()),
         }
+    }
+
+    fn split(&self, range: PartRange) -> (Option<PartRange>, Option<PartRange>) {
+        match self {
+            Self::If {
+                category, cmp, val, ..
+            } => {
+                let i = category.idx();
+                let (min, max) = range.ranges[i];
+
+                match cmp {
+                    Comparison::Less => {
+                        let matching = (min < *val)
+                            .then(|| range.clone().with_category(*category, min, *val - 1));
+                        let remaining =
+                            (*val <= max).then(|| range.with_category(*category, *val, max));
+
+                        (matching, remaining)
+                    }
+                    Comparison::Greater => {
+                        let matching = (*val < max)
+                            .then(|| range.clone().with_category(*category, *val + 1, max));
+                        let remaining =
+                            (min <= *val).then(|| range.with_category(*category, min, *val));
+                        (matching, remaining)
+                    }
+                }
+            }
+            Self::Else { .. } => (Some(range), None),
+        }
+    }
+}
+
+impl PartRange {
+    const fn new() -> Self {
+        Self {
+            ranges: [(1, 4000), (1, 4000), (1, 4000), (1, 4000)],
+        }
+    }
+
+    const fn with_category(mut self, category: Category, min: u32, max: u32) -> Self {
+        self.ranges[category.idx()] = (min, max);
+        self
+    }
+
+    fn combinations(&self) -> u64 {
+        self.ranges
+            .iter()
+            .map(|&(min, max)| u64::from(max - min + 1))
+            .product()
     }
 }
 
@@ -260,6 +324,46 @@ fn part1(workflows: &[Workflow], parts: &[Part]) -> u32 {
         .sum()
 }
 
+fn part2(workflows: &[Workflow]) -> u64 {
+    fn count_accepted(
+        workflows: &HashMap<&str, &Workflow>,
+        workflow: &str,
+        range: PartRange,
+    ) -> u64 {
+        match workflow {
+            "A" => range.combinations(),
+            "R" => 0,
+            _ => {
+                let workflow = workflows[workflow];
+                let mut range = range;
+                let mut count = 0;
+
+                for rule in &workflow.rules {
+                    let (matching, remaining) = rule.split(range.clone());
+
+                    if let Some(matching) = matching {
+                        count += count_accepted(workflows, rule.target(), matching);
+                    }
+
+                    match remaining {
+                        Some(remaining) => range = remaining,
+                        None => break,
+                    }
+                }
+
+                count
+            }
+        }
+    }
+
+    let workflows = workflows
+        .iter()
+        .map(|workflow| (workflow.name.as_str(), workflow))
+        .collect::<_>();
+
+    count_accepted(&workflows, "in", PartRange::new())
+}
+
 #[allow(clippy::similar_names)]
 fn main() -> Result<()> {
     let (workflows, parts) = self::parse()?;
@@ -271,6 +375,15 @@ fn main() -> Result<()> {
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 376_008);
+    };
+
+    {
+        let start = Instant::now();
+        let part2 = self::part2(&workflows);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 124_078_207_789_312);
     };
 
     Ok(())
