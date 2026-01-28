@@ -18,23 +18,16 @@ enum Dir {
 }
 
 #[derive(Debug)]
-struct Color {
-    red: u8,
-    green: u8,
-    blue: u8,
-}
-
-#[derive(Debug)]
 struct Step {
     dir: Dir,
-    cubes: usize,
-    color: Color,
+    cubes: u32,
+    color: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Pos {
-    x: i32,
-    y: i32,
+    x: i64,
+    y: i64,
 }
 
 #[derive(Debug, Default)]
@@ -56,33 +49,17 @@ impl TryFrom<char> for Dir {
     }
 }
 
-impl FromStr for Color {
-    type Err = Error;
+impl TryFrom<u32> for Dir {
+    type Error = Error;
 
-    fn from_str(color: &str) -> Result<Self> {
-        if !color.starts_with('#') {
-            bail!("missing '#' in RGB value");
+    fn try_from(dir: u32) -> Result<Self> {
+        match dir {
+            0 => Ok(Self::Right),
+            1 => Ok(Self::Down),
+            2 => Ok(Self::Left),
+            3 => Ok(Self::Up),
+            _ => bail!("invalid direction '{dir}'"),
         }
-
-        let bytes = color
-            .split('#')
-            .nth(1)
-            .ok_or_else(|| anyhow!("missing bytes in RGB value"))?;
-
-        let red = bytes
-            .get(0..2)
-            .map(|byte| u8::from_str_radix(byte, 16))
-            .ok_or_else(|| anyhow!("missing red color bytes in RGB value"))??;
-        let green = bytes
-            .get(2..4)
-            .map(|byte| u8::from_str_radix(byte, 16))
-            .ok_or_else(|| anyhow!("missing green color bytes in RGB value"))??;
-        let blue = bytes
-            .get(4..)
-            .map(|byte| u8::from_str_radix(byte, 16))
-            .ok_or_else(|| anyhow!("missing blue color bytes in RGB value"))??;
-
-        Ok(Self { red, green, blue })
     }
 }
 
@@ -105,10 +82,13 @@ impl FromStr for Step {
             .parse()?;
         let color = parts
             .next()
-            .ok_or_else(|| anyhow!("missing cubes in dig plan"))?
+            .ok_or_else(|| anyhow!("missing color in dig plan"))?
             .trim_start_matches('(')
             .trim_end_matches(')')
-            .parse()?;
+            .split('#')
+            .nth(1)
+            .map(|byte| u32::from_str_radix(byte, 16))
+            .ok_or_else(|| anyhow!("missing '#' in color code"))??;
 
         Ok(Self { dir, cubes, color })
     }
@@ -134,38 +114,51 @@ impl std::fmt::Display for Lagoon {
     }
 }
 
+impl Step {
+    fn extract(&self) -> Result<Self> {
+        let dir = Dir::try_from(self.color & 0xF)?;
+        let cubes = (self.color & 0x00FF_FFF0) >> 4;
+
+        Ok(Self {
+            dir,
+            cubes,
+            ..*self
+        })
+    }
+}
+
 impl Pos {
-    const fn up(self) -> Self {
+    const fn up(self, steps: i64) -> Self {
         Self {
-            y: self.y - 1,
+            y: self.y - steps,
             ..self
         }
     }
 
-    const fn right(self) -> Self {
+    const fn right(self, steps: i64) -> Self {
         Self {
-            x: self.x + 1,
+            x: self.x + steps,
             ..self
         }
     }
 
-    const fn down(self) -> Self {
+    const fn down(self, steps: i64) -> Self {
         Self {
-            y: self.y + 1,
+            y: self.y + steps,
             ..self
         }
     }
 
-    const fn left(self) -> Self {
+    const fn left(self, steps: i64) -> Self {
         Self {
-            x: self.x - 1,
+            x: self.x - steps,
             ..self
         }
     }
 }
 
 impl Lagoon {
-    fn width(&self) -> i32 {
+    fn width(&self) -> i64 {
         self.trench
             .iter()
             .map(|&pos| pos.x + 1)
@@ -173,7 +166,7 @@ impl Lagoon {
             .unwrap_or_default()
     }
 
-    fn height(&self) -> i32 {
+    fn height(&self) -> i64 {
         self.trench
             .iter()
             .map(|&pos| pos.y + 1)
@@ -188,10 +181,10 @@ impl Lagoon {
         for step in steps {
             for _ in 0..step.cubes {
                 pos = match step.dir {
-                    Dir::Up => pos.up(),
-                    Dir::Right => pos.right(),
-                    Dir::Down => pos.down(),
-                    Dir::Left => pos.left(),
+                    Dir::Up => pos.up(1),
+                    Dir::Right => pos.right(1),
+                    Dir::Down => pos.down(1),
+                    Dir::Left => pos.left(1),
                 };
                 self.trench.insert(pos);
             }
@@ -247,7 +240,7 @@ impl Lagoon {
 
             exterior.insert(pos);
 
-            for pos in [pos.up(), pos.right(), pos.down(), pos.left()] {
+            for pos in [pos.up(1), pos.right(1), pos.down(1), pos.left(1)] {
                 stack.push(pos);
             }
         }
@@ -266,6 +259,45 @@ impl Lagoon {
     }
 }
 
+fn part1(steps: &[Step]) -> usize {
+    Lagoon::default()
+        .dig_edges(steps)
+        .dig_interior()
+        .trench
+        .len()
+}
+
+fn part2(steps: &[Step]) -> i64 {
+    let mut pos = Pos { x: 0, y: 0 };
+    let mut corners = Vec::with_capacity(steps.len());
+    let mut boundary = 0;
+
+    for step in steps {
+        pos = match step.dir {
+            Dir::Up => pos.up(i64::from(step.cubes)),
+            Dir::Right => pos.right(i64::from(step.cubes)),
+            Dir::Down => pos.down(i64::from(step.cubes)),
+            Dir::Left => pos.left(i64::from(step.cubes)),
+        };
+
+        corners.push(pos);
+        boundary += i64::from(step.cubes);
+    }
+
+    let mut area = 0;
+
+    // Shoelace formula
+    for i in 0..corners.len() {
+        let j = (i + 1) % corners.len();
+        area += corners[i].x * corners[j].y;
+        area -= corners[j].x * corners[i].y;
+    }
+    area = area.abs() / 2;
+
+    // Pick's theorem: i + b = A + b/2 + 1
+    area + boundary / 2 + 1
+}
+
 fn main() -> Result<()> {
     let steps = fs::read_to_string("in/day18.txt")?
         .lines()
@@ -274,37 +306,25 @@ fn main() -> Result<()> {
 
     {
         let start = Instant::now();
-        let part1 = Lagoon::default()
-            .dig_edges(&steps)
-            .dig_interior()
-            .trench
-            .len();
+        let part1 = self::part1(&steps);
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 49_897);
     };
 
+    {
+        let start = Instant::now();
+        let steps = steps
+            .iter()
+            .map(Step::extract)
+            .collect::<Result<Vec<_>>>()?;
+        let part2 = self::part2(&steps);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 194_033_958_221_830);
+    };
+
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn color_from_str() -> Result<()> {
-        assert!(Color::from_str("70c710").is_err());
-        assert!(Color::from_str("#").is_err());
-        assert!(Color::from_str("#70").is_err());
-        assert!(Color::from_str("#70c7").is_err());
-        assert!(Color::from_str("#70c71").is_err());
-
-        let color = Color::from_str("#70c710")?;
-        assert_eq!(color.red, 0x70);
-        assert_eq!(color.green, 0xc7);
-        assert_eq!(color.blue, 0x10);
-
-        Ok(())
-    }
 }
