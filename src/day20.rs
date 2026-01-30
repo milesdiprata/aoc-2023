@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fs;
 use std::str::FromStr;
@@ -21,15 +22,15 @@ enum Module {
     FlipFlop {
         name: String,
         state: bool,
-        outputs: Vec<String>,
+        outputs: HashSet<String>,
     },
     Conjunction {
         name: String,
         mem: HashMap<String, Pulse>,
-        outputs: Vec<String>,
+        outputs: HashSet<String>,
     },
     Broadcast {
-        outputs: Vec<String>,
+        outputs: HashSet<String>,
     },
 }
 
@@ -57,7 +58,7 @@ impl FromStr for Module {
             .ok_or_else(|| anyhow!("missing module RHS"))?
             .split(", ")
             .map(str::to_string)
-            .collect::<Vec<String>>();
+            .collect::<_>();
 
         if lhs.starts_with('%') {
             Ok(Self::FlipFlop {
@@ -100,11 +101,23 @@ impl Module {
         }
     }
 
-    const fn outputs(&self) -> &[String] {
+    const fn outputs(&self) -> &HashSet<String> {
         match self {
             Self::FlipFlop { outputs, .. }
             | Self::Conjunction { outputs, .. }
-            | Self::Broadcast { outputs } => outputs.as_slice(),
+            | Self::Broadcast { outputs } => outputs,
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Self::FlipFlop { state, .. } => *state = false,
+            Self::Conjunction { mem, .. } => {
+                for pulse in mem.values_mut() {
+                    *pulse = Pulse::default();
+                }
+            }
+            Self::Broadcast { .. } => (),
         }
     }
 
@@ -176,6 +189,12 @@ impl ModuleConfig {
         }
     }
 
+    fn reset(&mut self) {
+        for module in self.modules.values_mut() {
+            module.reset();
+        }
+    }
+
     fn press_button(&mut self) -> (usize, usize) {
         let mut presses_low = 0;
         let mut presses_high = 0;
@@ -211,6 +230,61 @@ fn part1(config: &mut ModuleConfig) -> usize {
     presses_low * presses_high
 }
 
+fn part2(config: &mut ModuleConfig) -> usize {
+    fn lcm(a: usize, b: usize) -> usize {
+        fn gcd(a: usize, b: usize) -> usize {
+            if b == 0 {
+                a
+            } else {
+                gcd(b, a % b)
+            }
+        }
+
+        a / gcd(a, b) * b
+    }
+
+    let input_to_rx = config
+        .modules
+        .values()
+        .find(|&module| module.outputs().contains("rx"))
+        .map(Module::name)
+        .map(str::to_string)
+        .unwrap();
+
+    let inputs_to_rx_input = config
+        .modules
+        .values()
+        .filter(|&module| module.outputs().contains(&input_to_rx))
+        .count();
+
+    let mut cycles = HashMap::new();
+
+    for presses in 1.. {
+        let mut queue = VecDeque::from([Signal {
+            from: "button".to_string(),
+            to: "broadcast".to_string(),
+            pulse: Pulse::Low,
+        }]);
+
+        while let Some(signal) = queue.pop_front() {
+            if signal.to == input_to_rx && signal.pulse == Pulse::High {
+                cycles.entry(signal.from.clone()).or_insert(presses);
+                if cycles.len() == inputs_to_rx_input {
+                    return cycles.values().copied().fold(1, lcm);
+                }
+            }
+
+            if let Some(module) = config.modules.get_mut(&signal.to) {
+                for signal in module.process(&signal.from, signal.pulse) {
+                    queue.push_back(signal);
+                }
+            }
+        }
+    }
+
+    unreachable!()
+}
+
 fn main() -> Result<()> {
     let mut config = ModuleConfig::from_str(&fs::read_to_string("in/day20.txt")?)?;
 
@@ -221,6 +295,17 @@ fn main() -> Result<()> {
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 819_397_964);
+    };
+
+    config.reset();
+
+    {
+        let start = Instant::now();
+        let part2 = self::part2(&mut config);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 252_667_369_442_479);
     };
 
     Ok(())
