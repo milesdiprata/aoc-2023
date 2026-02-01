@@ -18,14 +18,14 @@ enum Tile {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Pos {
-    x: usize,
-    y: usize,
+    x: isize,
+    y: isize,
 }
 
 struct Map {
     grid: Vec<Tile>,
-    width: usize,
-    height: usize,
+    width: isize,
+    height: isize,
     start: Pos,
 }
 
@@ -95,6 +95,7 @@ impl FromStr for Map {
         let start = (0..height)
             .flat_map(|y| (0..width).map(move |x| (x, y)))
             .find(|&(x, y)| grid[y][x] == 'S')
+            .map(|(x, y)| (x.cast_signed(), y.cast_signed()))
             .map(|(x, y)| Pos { x, y })
             .ok_or_else(|| anyhow!("missing start position"))?;
 
@@ -106,8 +107,8 @@ impl FromStr for Map {
 
         Ok(Self {
             grid,
-            width,
-            height,
+            width: width.cast_signed(),
+            height: height.cast_signed(),
             start,
         })
     }
@@ -120,49 +121,64 @@ impl Tile {
 }
 
 impl Pos {
-    fn up(self) -> Option<Self> {
-        Some(Self {
-            y: self.y.checked_sub(1)?,
+    const fn up(self) -> Self {
+        Self {
+            y: self.y - 1,
             ..self
-        })
+        }
     }
 
-    fn right(self) -> Option<Self> {
-        Some(Self {
-            x: self.x.checked_add(1)?,
+    const fn right(self) -> Self {
+        Self {
+            x: self.x + 1,
             ..self
-        })
+        }
     }
 
-    fn down(self) -> Option<Self> {
-        Some(Self {
-            y: self.y.checked_add(1)?,
+    const fn down(self) -> Self {
+        Self {
+            y: self.y + 1,
             ..self
-        })
+        }
     }
 
-    fn left(self) -> Option<Self> {
-        Some(Self {
-            x: self.x.checked_sub(1)?,
+    const fn left(self) -> Self {
+        Self {
+            x: self.x - 1,
             ..self
-        })
+        }
+    }
+
+    const fn neighbors(self) -> [Self; 4] {
+        [self.up(), self.right(), self.down(), self.left()]
     }
 }
 
 impl Map {
     fn get(&self, pos: Pos) -> Option<Tile> {
-        if pos.x < self.width && pos.y < self.height {
-            Some(self.grid[(pos.y * self.width) + pos.x])
+        if pos.x >= 0 && pos.x < self.width && pos.y >= 0 && pos.y < self.height {
+            Some(self.grid[((pos.y * self.width) + pos.x).cast_unsigned()])
         } else {
             None
         }
     }
 
-    fn neighbors(&self, pos: Pos) -> impl Iterator<Item = Pos> + '_ {
-        [pos.up(), pos.right(), pos.down(), pos.left()]
+    fn get_wrapped(&self, pos: Pos) -> Tile {
+        let x = pos.x.rem_euclid(self.width);
+        let y = pos.y.rem_euclid(self.height);
+        self.grid[((y * self.width) + x).cast_unsigned()]
+    }
+
+    fn neighbors_bounded(&self, pos: Pos) -> impl Iterator<Item = Pos> + '_ {
+        pos.neighbors()
             .into_iter()
-            .flatten()
             .filter(|&pos| self.get(pos).is_some_and(Tile::is_garden_plot))
+    }
+
+    fn neighbors_wrapped(&self, pos: Pos) -> impl Iterator<Item = Pos> + '_ {
+        pos.neighbors()
+            .into_iter()
+            .filter(|&pos| self.get_wrapped(pos).is_garden_plot())
     }
 
     /// Elf is allowed to backtrack (step on a tile, then step back)
@@ -191,7 +207,7 @@ impl Map {
 
         while let Some((pos, dist)) = frontier.pop_front() {
             let next_dist = dist + 1;
-            for next in self.neighbors(pos) {
+            for next in self.neighbors_bounded(pos) {
                 if next_dist <= steps_max && visited.insert(next) {
                     frontier.push_back((next, next_dist));
 
@@ -205,6 +221,34 @@ impl Map {
 
         count
     }
+
+    fn explore_infinite(&self, steps_max: usize) -> usize {
+        let mut frontier = VecDeque::from([(self.start, 0_usize)]);
+        let mut visited = HashSet::from([self.start]);
+        let mut count = usize::from(steps_max.is_multiple_of(2));
+
+        while let Some((pos, dist)) = frontier.pop_front() {
+            let next_dist = dist + 1;
+            for next in self.neighbors_wrapped(pos) {
+                if next_dist <= steps_max && visited.insert(next) {
+                    frontier.push_back((next, next_dist));
+
+                    if next_dist % 2 == steps_max % 2 {
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        count
+    }
+}
+
+const fn quadratic_interpolate(f0: isize, f1: isize, f2: isize, n: isize) -> isize {
+    let c = f0;
+    let a = isize::midpoint(f2 - 2 * f1, f0);
+    let b = f1 - f0 - a;
+    a * n * n + b * n + c
 }
 
 fn main() -> Result<()> {
@@ -217,6 +261,21 @@ fn main() -> Result<()> {
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 3_731);
+    };
+
+    {
+        let start = Instant::now();
+
+        let f0 = map.explore_infinite(65).cast_signed();
+        let f1 = map.explore_infinite(65 + 131).cast_signed();
+        let f2 = map.explore_infinite(65 + (2 * 131)).cast_signed();
+        let n = 202_300; // (26_501_365 - 65) / 131
+
+        let part2 = self::quadratic_interpolate(f0, f1, f2, n);
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 617_565_692_567_199);
     };
 
     Ok(())
