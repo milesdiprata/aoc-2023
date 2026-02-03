@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::fmt::Write;
 use std::fs;
 use std::str::FromStr;
@@ -331,18 +332,57 @@ impl SupportGraph {
 
         count
     }
+
+    fn chain_reaction_count(&self, start: usize) -> usize {
+        let mut fallen = HashSet::from([start]);
+        let mut frontier = VecDeque::from([start]);
+
+        while let Some(i) = frontier.pop_front() {
+            if let Some(supported) = self.supports.get(&i) {
+                for &j in supported {
+                    if fallen.contains(&j) {
+                        continue;
+                    }
+
+                    if let Some(supporters) = self.supported_by.get(&j) {
+                        if supporters
+                            .iter()
+                            .all(|supporter| fallen.contains(supporter))
+                        {
+                            fallen.insert(j);
+                            frontier.push_back(j);
+                        }
+                    }
+                }
+            }
+        }
+
+        fallen.len() - 1
+    }
 }
 
 fn main() -> Result<()> {
     let mut stack = Stack::from_str(&fs::read_to_string("in/day22.txt")?)?;
+    let graph = stack.simulate_fall();
 
     {
         let start = Instant::now();
-        let part1 = stack.simulate_fall().safe_count();
+        let part1 = graph.safe_count();
         let elapsed = Instant::now().duration_since(start);
 
         println!("Part 1: {part1} ({elapsed:?})");
         assert_eq!(part1, 401);
+    };
+
+    {
+        let start = Instant::now();
+        let part2 = (0..graph.len)
+            .map(|i| graph.chain_reaction_count(i))
+            .sum::<usize>();
+        let elapsed = Instant::now().duration_since(start);
+
+        println!("Part 2: {part2} ({elapsed:?})");
+        assert_eq!(part2, 63_491);
     };
 
     Ok(())
